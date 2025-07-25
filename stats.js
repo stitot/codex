@@ -12,20 +12,16 @@ const fetchJson = async (url, label) => {
   return res.json();
 };
 
-const toEpochDay = (dateStr) => {
-  const d = new Date(dateStr);
-  d.setUTCHours(0, 0, 0, 0);
-  return d.getTime();
-};
-
 const dateToISO = (d) => d.toISOString().slice(0, 10);
+
+const toISODate = (dateStr) => dateToISO(new Date(dateStr));
 
 const getNpmPublishDates = async () => {
   const url = `${BASES.npmRegistry}/${encodeURIComponent(PACKAGE)}`;
   const data = await fetchJson(url, "npm registry");
   return Object.entries(data.time)
     .filter(([k]) => k !== "created" && k !== "modified")
-    .reduce((acc, [ver, date]) => ({ ...acc, [ver]: toEpochDay(date) }), {});
+    .reduce((acc, [ver, date]) => ({ ...acc, [ver]: toISODate(date) }), {});
 };
 
 const fetchJsDelivrDownloads = async (range) => {
@@ -97,6 +93,8 @@ const computeMovingAverage = (data, window = 7) =>
     return [data[i][0], Math.round(avg)];
   });
 
+const toHighcharts = (arr) => arr.map(([d, v]) => [Date.parse(d), v]);
+
 const fetchSplitStats = async (fromMonth, toMonth) => {
   const jsdelivrRanges = getOptimizedJsDelivrRanges(fromMonth, toMonth);
   const seenJsDelivr = new Set();
@@ -113,7 +111,7 @@ const fetchSplitStats = async (fromMonth, toMonth) => {
       filtered.forEach(({ date, downloads }) => {
         if (!seenJsDelivr.has(date)) {
           seenJsDelivr.add(date);
-          jsdelivr.push([toEpochDay(date), downloads / 2]);
+          jsdelivr.push([date, downloads / 2]);
         }
       });
     } catch (e) {
@@ -121,13 +119,12 @@ const fetchSplitStats = async (fromMonth, toMonth) => {
     }
   }
 
-  const maxJsDelivrEpoch = Math.max(...jsdelivr.map(([ts]) => ts));
+  const maxJsDelivrDate = jsdelivr.reduce((max, [d]) => (d > max ? d : max), "1970-01-01");
   const npmRaw = await fetchNpmDownloads(fromMonth, toMonth);
   npmRaw.forEach(({ date, downloads }) => {
-    const ts = toEpochDay(date);
-    if (!seenNpm.has(date) && ts <= maxJsDelivrEpoch) {
+    if (!seenNpm.has(date) && date <= maxJsDelivrDate) {
       seenNpm.add(date);
-      npm.push([ts, downloads]);
+      npm.push([date, downloads]);
     }
   });
 
@@ -143,7 +140,7 @@ const renderChart = async (fromMonth, toMonth) => {
   const { jsdelivr, npm, versions } = await fetchSplitStats(fromMonth, toMonth);
 
   const plotlines = Object.entries(versions).map(([ver, time]) => ({
-    value: time,
+    value: Date.parse(time),
     color: "#444",
     dashStyle: "Dash",
     label: {
@@ -165,11 +162,11 @@ const renderChart = async (fromMonth, toMonth) => {
     },
     yAxis: [{ title: { text: "NPM", style: { color: "blue" } } }, { title: { text: "jsDelivr", style: { color: "red" } }, opposite: true }],
     series: [
-      { name: "NPM avg", data: computeMovingAverage(npm), yAxis: 0, zIndex: 4 },
-      { name: "jsDelivr avg", data: computeMovingAverage(jsdelivr), yAxis: 1, zIndex: 3 },
+      { name: "NPM avg", data: toHighcharts(computeMovingAverage(npm)), yAxis: 0, zIndex: 4 },
+      { name: "jsDelivr avg", data: toHighcharts(computeMovingAverage(jsdelivr)), yAxis: 1, zIndex: 3 },
       {
         name: "NPM accurate",
-        data: npm,
+        data: toHighcharts(npm),
         yAxis: 0,
         color: "blue",
         opacity: 0.1,
@@ -178,7 +175,7 @@ const renderChart = async (fromMonth, toMonth) => {
       },
       {
         name: "jsDelivr accurate",
-        data: jsdelivr,
+        data: toHighcharts(jsdelivr),
         yAxis: 1,
         color: "red",
         opacity: 0.1,
