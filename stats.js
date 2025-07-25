@@ -12,9 +12,17 @@ const fetchJson = async (url, label) => {
   return res.json();
 };
 
-const dateToISO = (d) => d.toISOString().slice(0, 10);
+const isoDate = (d) => d.toISOString().slice(0, 10);
+const toISODate = (dateStr) => isoDate(new Date(dateStr));
 
-const toISODate = (dateStr) => dateToISO(new Date(dateStr));
+const parseMonth = (m) => {
+  const [y, mo] = m.split("-").map(Number);
+  return new Date(Date.UTC(y, mo - 1, 1));
+};
+
+const formatMonth = (d) => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+
+const addDays = (d, days) => new Date(d.getTime() + days * 864e5);
 
 const getNpmPublishDates = async () => {
   const url = `${BASES.npmRegistry}/${encodeURIComponent(PACKAGE)}`;
@@ -31,20 +39,17 @@ const fetchJsDelivrDownloads = async (range) => {
 };
 
 const getNpmDateRanges = (fromMonth, toMonth, maxDays = 360) => {
-  const start = new Date(`${fromMonth}-01T00:00:00Z`);
-  const end = new Date(`${toMonth}-01T00:00:00Z`);
+  const start = parseMonth(fromMonth);
+  const end = parseMonth(toMonth);
   end.setUTCMonth(end.getUTCMonth() + 1);
   end.setUTCDate(0);
 
   const ranges = [];
-  for (let cur = start; cur <= end; ) {
-    const rangeStart = new Date(cur);
-    const rangeEnd = new Date(cur);
-    rangeEnd.setUTCDate(rangeEnd.getUTCDate() + maxDays);
-    if (rangeEnd > end) rangeEnd.setTime(end.getTime());
-    ranges.push([dateToISO(rangeStart), dateToISO(rangeEnd)]);
-    cur = new Date(rangeEnd);
-    cur.setUTCDate(cur.getUTCDate() + 1);
+  for (let cur = new Date(start); cur <= end; ) {
+    const stop = addDays(cur, maxDays);
+    const rangeEnd = stop > end ? new Date(end) : stop;
+    ranges.push([isoDate(cur), isoDate(rangeEnd)]);
+    cur = addDays(rangeEnd, 1);
   }
 
   return ranges;
@@ -70,20 +75,18 @@ const fetchNpmDownloads = async (fromMonth, toMonth) => {
 
 const monthRange = (fromMonth, toMonth) => {
   const months = [];
-  const start = new Date(`${fromMonth}-01T00:00:00Z`);
-  const end = new Date(`${toMonth}-01T00:00:00Z`);
+  const start = parseMonth(fromMonth);
+  const end = parseMonth(toMonth);
   for (let cur = start; cur <= end; cur.setUTCMonth(cur.getUTCMonth() + 1)) {
-    months.push(`${cur.getUTCFullYear()}-${String(cur.getUTCMonth() + 1).padStart(2, "0")}`);
+    months.push(formatMonth(cur));
   }
   return months;
 };
 
-const getOptimizedJsDelivrRanges = (fromMonth, toMonth, today = new Date()) => {
-  return monthRange(fromMonth, toMonth).map((m) => {
-    const [y, mo] = m.split("-").map(Number);
-    return y === today.getUTCFullYear() && mo === today.getUTCMonth() + 1 ? "month" : m;
-  });
-};
+const getOptimizedJsDelivrRanges = (fromMonth, toMonth, today = new Date()) =>
+  monthRange(fromMonth, toMonth).map((m) =>
+    m === formatMonth(today) ? "month" : m
+  );
 
 
 const computeMovingAverage = (data, window = 7) =>
@@ -103,11 +106,12 @@ const fetchSplitStats = async (fromMonth, toMonth) => {
     npm = [];
   const versions = await getNpmPublishDates();
   const today = new Date();
+  const monthStart = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1));
 
   for (const r of jsdelivrRanges) {
     try {
       const downloads = await fetchJsDelivrDownloads(r);
-      const filtered = r === "month" ? downloads.filter((d) => new Date(d.date) >= new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1))) : downloads;
+      const filtered = r === "month" ? downloads.filter((d) => new Date(d.date) >= monthStart) : downloads;
       filtered.forEach(({ date, downloads }) => {
         if (!seenJsDelivr.has(date)) {
           seenJsDelivr.add(date);
@@ -201,12 +205,12 @@ document.getElementById("confirm-range").addEventListener("click", () => {
 });
 
 // Set default to last 6 full months
-const now = new Date();
-const thisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+const today = new Date();
+const thisMonth = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1));
 const fromDate = new Date(thisMonth);
-fromDate.setMonth(fromDate.getMonth() - 5);
-const defaultFrom = `${fromDate.getFullYear()}-${String(fromDate.getMonth() + 1).padStart(2, "0")}`;
-const defaultTo = `${thisMonth.getFullYear()}-${String(thisMonth.getMonth() + 1).padStart(2, "0")}`;
+fromDate.setUTCMonth(fromDate.getUTCMonth() - 5);
+const defaultFrom = formatMonth(fromDate);
+const defaultTo = formatMonth(thisMonth);
 
 document.getElementById("from-month").value = defaultFrom;
 document.getElementById("to-month").value = defaultTo;
