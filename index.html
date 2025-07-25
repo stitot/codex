@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Grid Stats</title>
+    
+    <script src="http://localhost:3030/code/highcharts.js"></script>
+
+    <link rel="stylesheet"  href="demo.css" />
+
+</head>
+<body>
+
+    <label>
+  From:
+  <input type="month" id="from-month" value="2025-01" />
+</label>
+<label>
+  To:
+  <input type="month" id="to-month" value="2025-07" />
+</label>
+<button id="confirm-range">Confirm</button>
+
+<div id="container-total"></div>
+<div id="last-updated"></div>
+
+    <script src="stats.js"></script> 
+
+</body>
+</html>
