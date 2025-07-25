@@ -34,9 +34,28 @@ const fetchJsDelivrDownloads = async (range) => {
   return Object.entries(data?.hits?.dates || {}).map(([date, downloads]) => ({ date, downloads }));
 };
 
+const getNpmDateRanges = (fromMonth, toMonth, maxDays = 360) => {
+  const start = new Date(`${fromMonth}-01T00:00:00Z`);
+  const end = new Date(`${toMonth}-01T00:00:00Z`);
+  end.setUTCMonth(end.getUTCMonth() + 1);
+  end.setUTCDate(0);
+
+  const ranges = [];
+  for (let cur = start; cur <= end; ) {
+    const rangeStart = new Date(cur);
+    const rangeEnd = new Date(cur);
+    rangeEnd.setUTCDate(rangeEnd.getUTCDate() + maxDays);
+    if (rangeEnd > end) rangeEnd.setTime(end.getTime());
+    ranges.push([dateToISO(rangeStart), dateToISO(rangeEnd)]);
+    cur = new Date(rangeEnd);
+    cur.setUTCDate(cur.getUTCDate() + 1);
+  }
+
+  return ranges;
+};
+
 const fetchNpmDownloads = async (fromMonth, toMonth) => {
-  const [startISO, endISO] = getISODateRange(fromMonth, toMonth);
-  const dateRanges = splitDateRange(startISO, endISO);
+  const dateRanges = getNpmDateRanges(fromMonth, toMonth);
   const results = [];
 
   for (const [start, end] of dateRanges) {
@@ -52,95 +71,24 @@ const fetchNpmDownloads = async (fromMonth, toMonth) => {
   return results;
 };
 
-const getISODateRange = (fromMonth, toMonth) => {
-  const start = new Date(`${fromMonth}-01`);
-  const end = new Date(new Date(`${toMonth}-01`).getFullYear(), new Date(`${toMonth}-01`).getMonth() + 1, 0);
-  return [dateToISO(start), dateToISO(end)];
-};
 
-const splitDateRange = (start, end, maxDays = 360) => {
-  const results = [];
-  let current = new Date(start);
-  const endDate = new Date(end);
-
-  while (current <= endDate) {
-    const segmentStart = new Date(current);
-    const segmentEnd = new Date(current);
-    segmentEnd.setDate(segmentEnd.getDate() + maxDays);
-    if (segmentEnd > endDate) segmentEnd.setTime(endDate.getTime());
-
-    results.push([dateToISO(segmentStart), dateToISO(segmentEnd)]);
-    current = new Date(segmentEnd);
-    current.setDate(current.getDate() + 1);
+const monthRange = (fromMonth, toMonth) => {
+  const months = [];
+  const start = new Date(`${fromMonth}-01T00:00:00Z`);
+  const end = new Date(`${toMonth}-01T00:00:00Z`);
+  for (let cur = start; cur <= end; cur.setUTCMonth(cur.getUTCMonth() + 1)) {
+    months.push(`${cur.getUTCFullYear()}-${String(cur.getUTCMonth() + 1).padStart(2, "0")}`);
   }
-
-  return results;
+  return months;
 };
 
 const getOptimizedJsDelivrRanges = (fromMonth, toMonth, today = new Date()) => {
-  const ranges = [];
-  let current = new Date(`${fromMonth}-01T00:00:00Z`);
-  const to = new Date(`${toMonth}-01T00:00:00Z`);
-
-  while (current <= to) {
-    const y = current.getUTCFullYear();
-    const m = current.getUTCMonth() + 1;
-    const isCurrentMonth = y === today.getUTCFullYear() && m === today.getUTCMonth() + 1;
-    ranges.push(isCurrentMonth ? "month" : `${y}-${String(m).padStart(2, "0")}`);
-    current.setUTCMonth(current.getUTCMonth() + 1);
-  }
-
-  return [...new Set(ranges)];
+  return monthRange(fromMonth, toMonth).map((m) => {
+    const [y, mo] = m.split("-").map(Number);
+    return y === today.getUTCFullYear() && mo === today.getUTCMonth() + 1 ? "month" : m;
+  });
 };
 
-// const getOptimizedJsDelivrRanges = (fromMonth, toMonth, today = new Date()) => {
-//   const ranges = [];
-//   let [y, m] = fromMonth.split("-").map(Number);
-//   const [toY, toM] = toMonth.split("-").map(Number);
-//   const currY = today.getFullYear();
-//   const currM = today.getMonth() + 1;
-
-//   const isBeforeEq = (y1, m1, y2, m2) => y1 < y2 || (y1 === y2 && m1 <= m2);
-//   const isSame = (y1, m1, y2, m2) => y1 === y2 && m1 === m2;
-
-//   if (isSame(y, m, toY, toM)) return [y === currY && m === currM ? "month" : "s-month"];
-
-//   while (isBeforeEq(y, m, toY, toM)) {
-//     if (y === currY && m === currM) {
-//       ranges.push("month");
-//       break;
-//     }
-
-//     if (m === 1 && isBeforeEq(y + 1, 0, toY, toM) && !(y + 1 === currY && 1 === currM)) {
-//       ranges.push(`${y}`);
-//       y++;
-//       continue;
-//     }
-
-//     const q = Math.floor((m - 1) / 3) + 1;
-//     const qStart = (q - 1) * 3 + 1;
-//     const qEnd = q * 3;
-
-//     if (m === qStart && isBeforeEq(y, qEnd, toY, toM) && !(y === currY && qEnd >= currM)) {
-//       ranges.push(`${y}-Q${q}`);
-//       m += 3;
-//       if (m > 12) {
-//         y++;
-//         m -= 12;
-//       }
-//       continue;
-//     }
-
-//     ranges.push(`${y}-${String(m).padStart(2, "0")}`);
-//     m++;
-//     if (m > 12) {
-//       y++;
-//       m = 1;
-//     }
-//   }
-
-//   return ranges;
-// };
 
 const computeMovingAverage = (data, window = 7) =>
   data.map(([, val], i) => {
