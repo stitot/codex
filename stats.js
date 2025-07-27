@@ -247,14 +247,29 @@ document.getElementById("confirm-range").addEventListener("click", () => {
   }
 });
 
-// Set default to last 6 months
-const today = new Date();
-const thisMonth = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1));
-const fromDate = new Date(thisMonth);
-fromDate.setUTCMonth(fromDate.getUTCMonth() - 5);
-const defaultFrom = isoDate(fromDate);
-const defaultTo = isoDate(today);
+// Initialize default range and input limits
+(async () => {
+  const versions = await getNpmPublishDates();
+  const minDate = Object.values(versions).sort()[0];
+  const today = new Date();
+  const todayIso = isoDate(today);
 
-document.getElementById("from-date").value = defaultFrom;
-document.getElementById("to-date").value = defaultTo;
-renderChart(defaultFrom, defaultTo);
+  const fromInput = document.getElementById("from-date");
+  const toInput = document.getElementById("to-date");
+  fromInput.min = minDate;
+  toInput.min = minDate;
+  fromInput.max = todayIso;
+  toInput.max = todayIso;
+
+  const thisMonth = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1));
+  const fromDate = new Date(thisMonth);
+  fromDate.setUTCMonth(fromDate.getUTCMonth() - 5);
+  if (fromDate < new Date(minDate)) fromDate.setTime(new Date(minDate).getTime());
+  const defaultFrom = isoDate(fromDate);
+  const defaultTo = todayIso;
+
+  fromInput.value = defaultFrom;
+  toInput.value = defaultTo;
+
+  renderChart(defaultFrom, defaultTo);
+})();
