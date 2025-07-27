@@ -123,7 +123,9 @@ const computeMovingAverage = (data, window = 7) =>
 
 const toHighcharts = (arr) => arr.map(([d, v]) => [Date.parse(d), v]);
 
-const fetchSplitStats = async (fromMonth, toMonth) => {
+const fetchSplitStats = async (fromDate, toDate) => {
+  const fromMonth = fromDate.slice(0, 7);
+  const toMonth = toDate.slice(0, 7);
   const jsdelivrRanges = getOptimizedJsDelivrRanges(fromMonth, toMonth);
   console.log(jsdelivrRanges);
   const seenJsDelivr = new Set();
@@ -158,16 +160,19 @@ const fetchSplitStats = async (fromMonth, toMonth) => {
     }
   });
 
-  return { jsdelivr, npm, versions };
+  const filteredJsDelivr = jsdelivr.filter(([d]) => d >= fromDate && d <= toDate);
+  const filteredNpm = npm.filter(([d]) => d >= fromDate && d <= toDate);
+
+  return { jsdelivr: filteredJsDelivr, npm: filteredNpm, versions };
 };
 
-const renderChart = async (fromMonth, toMonth) => {
+const renderChart = async (fromDate, toDate) => {
   const button = document.getElementById("confirm-range");
   const lastUpdated = document.getElementById("last-updated");
   button.disabled = true;
   lastUpdated.textContent = "Loading...";
 
-  const { jsdelivr, npm, versions } = await fetchSplitStats(fromMonth, toMonth);
+  const { jsdelivr, npm, versions } = await fetchSplitStats(fromDate, toDate);
 
   const plotlines = Object.entries(versions).map(([ver, time]) => ({
     value: Date.parse(time),
@@ -232,24 +237,24 @@ const renderChart = async (fromMonth, toMonth) => {
 };
 
 document.getElementById("confirm-range").addEventListener("click", () => {
-  const from = document.getElementById("from-month").value;
-  const to = document.getElementById("to-month").value;
+  const from = document.getElementById("from-date").value;
+  const to = document.getElementById("to-date").value;
 
   if (from && to && from <= to) {
     renderChart(from, to);
   } else {
-    alert("Please select a valid month range.");
+    alert("Please select a valid date range.");
   }
 });
 
-// Set default to last 6 full months
+// Set default to last 6 months
 const today = new Date();
 const thisMonth = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1));
 const fromDate = new Date(thisMonth);
 fromDate.setUTCMonth(fromDate.getUTCMonth() - 5);
-const defaultFrom = formatMonth(fromDate);
-const defaultTo = formatMonth(thisMonth);
+const defaultFrom = isoDate(fromDate);
+const defaultTo = isoDate(today);
 
-document.getElementById("from-month").value = defaultFrom;
-document.getElementById("to-month").value = defaultTo;
+document.getElementById("from-date").value = defaultFrom;
+document.getElementById("to-date").value = defaultTo;
 renderChart(defaultFrom, defaultTo);
