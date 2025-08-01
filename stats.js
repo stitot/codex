@@ -143,10 +143,15 @@ const fetchSplitStats = async (fromDate, toDate) => {
   for (const r of jsdelivrRanges) {
     try {
       const downloads = await fetchJsDelivrDownloads(r);
-      const filtered =
-        r === "month"
+      let filtered = downloads;
+      if (r === "month") {
+        const hasCurrent = downloads.some(
+          (d) => new Date(d.date) >= monthStart
+        );
+        filtered = hasCurrent
           ? downloads.filter((d) => new Date(d.date) >= monthStart)
           : downloads;
+      }
       filtered.forEach(({ date, downloads }) => {
         if (
           !seenJsDelivr.has(date) &&
@@ -176,10 +181,14 @@ const fetchSplitStats = async (fromDate, toDate) => {
     }
   });
 
-  const total = jsdelivr.map((item, index) => {
-    const secondValueSum = item[1] + npm[index][1];
-    return [item[0], secondValueSum];
+  const totals = {};
+  jsdelivr.forEach(([d, v]) => {
+    totals[d] = (totals[d] || 0) + v;
   });
+  npm.forEach(([d, v]) => {
+    totals[d] = (totals[d] || 0) + v;
+  });
+  const total = Object.entries(totals).sort((a, b) => a[0].localeCompare(b[0]));
 
   return { jsdelivr, npm, total };
 };
