@@ -18,3 +18,20 @@ label {
   font-size: 0.9rem;
   color: #666;
 }
+
+div.tooltip div {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 0;
+}
+
+div.tooltip span:first-child {
+  flex: 1;
+  text-align: left;
+}
+
+div.tooltip span:last-child {
+  text-align: right;
+  min-width: 80px;
+  font-variant-numeric: tabular-nums;
+}
