@@ -167,21 +167,34 @@ const fetchSplitStats = async (fromDate, toDate) => {
     }
   }
 
-  const maxJsDelivrDate = jsdelivr.reduce((max, [d]) => (d > max ? d : max), "1970-01-01");
+  const jsdelivrFiltered = jsdelivr
+    .filter(([d]) => d >= fromDate && d <= toDate)
+    .sort((a, b) => a[0].localeCompare(b[0]));
+
+  const maxJsDelivrDate = jsdelivrFiltered.reduce(
+    (max, [d]) => (d > max ? d : max),
+    "1970-01-01"
+  );
+
   const npmRaw = await fetchNpmDownloads(fromMonth, toMonth);
-  npmRaw.forEach(({ date, downloads }) => {
-    if (!seenNpm.has(date) && date <= maxJsDelivrDate) {
-      seenNpm.add(date);
-      npm.push([date, downloads]);
-    }
-  });
+  const npmMap = new Map();
+  npmRaw
+    .filter(({ date }) => date >= fromDate && date <= toDate && date <= maxJsDelivrDate)
+    .forEach(({ date, downloads }) => {
+      if (!seenNpm.has(date)) {
+        seenNpm.add(date);
+        npmMap.set(date, downloads);
+        npm.push([date, downloads]);
+      }
+    });
 
-  const total = jsdelivr.map((item, index) => {
-    const secondValueSum = item[1] + npm[index][1];
-    return [item[0], secondValueSum];
-  });
+  const npmFiltered = npm
+    .filter(([d]) => d >= fromDate && d <= toDate)
+    .sort((a, b) => a[0].localeCompare(b[0]));
 
-  return { jsdelivr, npm, total };
+  const total = jsdelivrFiltered.map(([date, dl]) => [date, dl + (npmMap.get(date) || 0)]);
+
+  return { jsdelivr: jsdelivrFiltered, npm: npmFiltered, total };
 };
 
 const renderChart = async (fromDate, toDate, vers) => {
