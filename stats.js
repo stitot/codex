@@ -133,41 +133,50 @@ const fetchSplitStats = async (fromDate, toDate) => {
   const fromMonth = fromDate.slice(0, 7);
   const toMonth = toDate.slice(0, 7);
   const jsdelivrRanges = getOptimizedJsDelivrRanges(fromMonth, toMonth);
-  const seenJsDelivr = new Set();
-  const seenNpm = new Set();
-  const jsdelivr = [];
-  const npm = [];
+  const jsDelivrMap = new Map();
+  const npmMap = new Map();
   const today = new Date();
   const monthStart = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1));
 
   for (const r of jsdelivrRanges) {
     try {
-      const downloads = await fetchJsDelivrDownloads(r);
-      const filtered = r === "month" ? downloads.filter((d) => new Date(d.date) >= monthStart) : downloads;
-      filtered.forEach(({ date, downloads }) => {
-        if (!seenJsDelivr.has(date)) {
-          seenJsDelivr.add(date);
-          jsdelivr.push([date, Math.round(downloads / 2)]);
+      const raw = await fetchJsDelivrDownloads(r);
+      let entries = r === "month" ? raw.filter((d) => new Date(d.date) >= monthStart) : raw;
+
+      if (r !== "month" && entries.every((d) => d.downloads === 0)) {
+        const monthData = await fetchJsDelivrDownloads("month");
+        entries = monthData.filter((d) => d.date >= fromDate && d.date <= toDate);
+      }
+
+      for (const { date, downloads } of entries) {
+        if (!jsDelivrMap.has(date)) {
+          jsDelivrMap.set(date, Math.round(downloads / 2));
         }
-      });
+      }
     } catch (e) {
       console.warn(`Skipping jsDelivr ${r}: ${e.message}`);
     }
   }
 
-  const maxJsDelivrDate = jsdelivr.reduce((max, [d]) => (d > max ? d : max), "1970-01-01");
-  const npmRaw = await fetchNpmDownloads(fromMonth, toMonth);
-  npmRaw.forEach(({ date, downloads }) => {
-    if (!seenNpm.has(date) && date <= maxJsDelivrDate) {
-      seenNpm.add(date);
-      npm.push([date, downloads]);
-    }
-  });
+  const jsdelivr = Array.from(jsDelivrMap.entries())
+    .filter(([d]) => d >= fromDate && d <= toDate)
+    .sort((a, b) => a[0].localeCompare(b[0]));
 
-  const total = jsdelivr.map((item, index) => {
-    const secondValueSum = item[1] + npm[index][1];
-    return [item[0], secondValueSum];
-  });
+  const maxJsDelivrDate = jsdelivr.length ? jsdelivr[jsdelivr.length - 1][0] : "1970-01-01";
+
+  try {
+    const npmRaw = await fetchNpmDownloads(fromMonth, toMonth);
+    for (const { date, downloads } of npmRaw) {
+      if (date < fromDate || date > toDate || date > maxJsDelivrDate) continue;
+      if (!npmMap.has(date)) npmMap.set(date, downloads);
+    }
+  } catch (e) {
+    console.warn(`Skipping npm range fetch: ${e.message}`);
+  }
+
+  const npm = Array.from(npmMap.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+
+  const total = jsdelivr.map(([d, v]) => [d, v + (npmMap.get(d) || 0)]);
 
   return { jsdelivr, npm, total };
 };
@@ -294,41 +303,50 @@ const renderChart = async (fromDate, toDate, vers) => {
   button.disabled = false;
 };
 
-document.getElementById("confirm-range").addEventListener("click", () => {
-  const from = document.getElementById("from-date").value;
-  const to = document.getElementById("to-date").value;
+if (typeof document !== "undefined") {
+  document.getElementById("confirm-range").addEventListener("click", () => {
+    const from = document.getElementById("from-date").value;
+    const to = document.getElementById("to-date").value;
 
-  if (from && to && from <= to) {
-    renderChart(from, to);
-  } else {
-    alert("Please select a valid date range.");
-  }
-});
+    if (from && to && from <= to) {
+      renderChart(from, to);
+    } else {
+      alert("Please select a valid date range.");
+    }
+  });
 
-// Initialize default range and input limits
-(async () => {
-  const versions = await getNpmPublishDates();
-  const packages = await getNpmPackages();
-  const minDate = Object.values(versions).sort()[0];
-  const today = new Date();
-  const todayIso = isoDate(today);
+  // Initialize default range and input limits
+  (async () => {
+    const versions = await getNpmPublishDates();
+    const packages = await getNpmPackages();
+    const minDate = Object.values(versions).sort()[0];
+    const today = new Date();
+    const todayIso = isoDate(today);
 
-  const fromInput = document.getElementById("from-date");
-  const toInput = document.getElementById("to-date");
-  fromInput.min = minDate;
-  toInput.min = minDate;
-  fromInput.max = todayIso;
-  toInput.max = todayIso;
+    const fromInput = document.getElementById("from-date");
+    const toInput = document.getElementById("to-date");
+    fromInput.min = minDate;
+    toInput.min = minDate;
+    fromInput.max = todayIso;
+    toInput.max = todayIso;
 
-  const thisMonth = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1));
-  const fromDate = new Date(thisMonth);
-  fromDate.setUTCMonth(fromDate.getUTCMonth() - 5);
-  if (fromDate < new Date(minDate)) fromDate.setTime(new Date(minDate).getTime());
-  const defaultFrom = isoDate(fromDate);
-  const defaultTo = todayIso;
+    const thisMonth = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1));
+    const fromDate = new Date(thisMonth);
+    fromDate.setUTCMonth(fromDate.getUTCMonth() - 5);
+    if (fromDate < new Date(minDate)) fromDate.setTime(new Date(minDate).getTime());
+    const defaultFrom = isoDate(fromDate);
+    const defaultTo = todayIso;
 
-  fromInput.value = defaultFrom;
-  toInput.value = defaultTo;
+    fromInput.value = defaultFrom;
+    toInput.value = defaultTo;
 
-  renderChart(defaultFrom, defaultTo, versions);
-})();
+    renderChart(defaultFrom, defaultTo, versions);
+  })();
+}
+
+if (typeof module !== "undefined") {
+  module.exports = {
+    fetchJsDelivrDownloads,
+    fetchSplitStats,
+  };
+}
