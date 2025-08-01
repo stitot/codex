@@ -143,9 +143,16 @@ const fetchSplitStats = async (fromDate, toDate) => {
   for (const r of jsdelivrRanges) {
     try {
       const downloads = await fetchJsDelivrDownloads(r);
-      const filtered = r === "month" ? downloads.filter((d) => new Date(d.date) >= monthStart) : downloads;
+      const filtered =
+        r === "month"
+          ? downloads.filter((d) => new Date(d.date) >= monthStart)
+          : downloads;
       filtered.forEach(({ date, downloads }) => {
-        if (!seenJsDelivr.has(date)) {
+        if (
+          !seenJsDelivr.has(date) &&
+          date >= fromDate &&
+          date <= toDate
+        ) {
           seenJsDelivr.add(date);
           jsdelivr.push([date, Math.round(downloads / 2)]);
         }
@@ -158,7 +165,12 @@ const fetchSplitStats = async (fromDate, toDate) => {
   const maxJsDelivrDate = jsdelivr.reduce((max, [d]) => (d > max ? d : max), "1970-01-01");
   const npmRaw = await fetchNpmDownloads(fromMonth, toMonth);
   npmRaw.forEach(({ date, downloads }) => {
-    if (!seenNpm.has(date) && date <= maxJsDelivrDate) {
+    if (
+      !seenNpm.has(date) &&
+      date <= maxJsDelivrDate &&
+      date >= fromDate &&
+      date <= toDate
+    ) {
       seenNpm.add(date);
       npm.push([date, downloads]);
     }
