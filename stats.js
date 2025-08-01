@@ -42,6 +42,12 @@ const getNpmPublishDates = async () => {
     .reduce((acc, [ver, date]) => ({ ...acc, [ver]: toISODate(date) }), {});
 };
 
+const getNpmPackages = async () => {
+  const url = `${BASES.npmRegistry}/-/v1/search?text=highcharts}`;
+  const data = await fetchJson(url, "npm packages");
+  return data.objects.filter((obj) => obj.package.maintainers?.some((m) => m.email?.includes("@highsoft.com"))).map((obj) => obj.package.name);
+};
+
 const fetchJsDelivrDownloads = async (range) => {
   const url = `${BASES.jsDelivr}/${encodeURIComponent(PACKAGE)}?period=${range}`;
   const data = await fetchJson(url, "jsDelivr");
@@ -115,7 +121,7 @@ const getOptimizedJsDelivrRanges = (fromMonth, toMonth, today = new Date()) => {
 };
 
 const computeMovingAverage = (data, window = 7) =>
-  data.map(([, val], i) => {
+  data.map(([], i) => {
     const windowData = data.slice(Math.max(0, i - window + 1), i + 1);
     const avg = windowData.reduce((sum, [, v]) => sum + v, 0) / windowData.length;
     return [data[i][0], Math.round(avg)];
@@ -127,12 +133,10 @@ const fetchSplitStats = async (fromDate, toDate) => {
   const fromMonth = fromDate.slice(0, 7);
   const toMonth = toDate.slice(0, 7);
   const jsdelivrRanges = getOptimizedJsDelivrRanges(fromMonth, toMonth);
-  console.log(jsdelivrRanges);
   const seenJsDelivr = new Set();
   const seenNpm = new Set();
-  const jsdelivr = [],
-    npm = [];
-  const versions = await getNpmPublishDates();
+  const jsdelivr = [];
+  const npm = [];
   const today = new Date();
   const monthStart = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1));
 
@@ -160,77 +164,131 @@ const fetchSplitStats = async (fromDate, toDate) => {
     }
   });
 
-  const filteredJsDelivr = jsdelivr.filter(([d]) => d >= fromDate && d <= toDate);
-  const filteredNpm = npm.filter(([d]) => d >= fromDate && d <= toDate);
+  const total = jsdelivr.map((item, index) => {
+    const secondValueSum = item[1] + npm[index][1];
+    return [item[0], secondValueSum];
+  });
 
-  return { jsdelivr: filteredJsDelivr, npm: filteredNpm, versions };
+  return { jsdelivr, npm, total };
 };
 
-const renderChart = async (fromDate, toDate) => {
+const renderChart = async (fromDate, toDate, vers) => {
+  const versions = !vers ? await getNpmPublishDates() : vers;
+
   const button = document.getElementById("confirm-range");
   const lastUpdated = document.getElementById("last-updated");
   button.disabled = true;
   lastUpdated.textContent = "Loading...";
 
-  const { jsdelivr, npm, versions } = await fetchSplitStats(fromDate, toDate);
+  const { jsdelivr, npm, total } = await fetchSplitStats(fromDate, toDate);
 
   const plotlines = Object.entries(versions).map(([ver, time]) => ({
-    value: Date.parse(time),
+    value: time,
     color: "#444",
     dashStyle: "Dash",
+    zIndex: 1,
     label: {
-      text: ver,
+      text: `<strong>${ver}</strong> (${time.split("-")[2]}.${time.split("-")[1]})`,
       x: 7,
-      style: { fontSize: "10px", color: "#444" },
+      style: { fontSize: "12px", color: "#444" },
     },
   }));
 
   const chart = Highcharts.chart("container-total", {
     plotOptions: {
-      series: { shadow: true, marker: { enabled: false } },
+      series: {
+        marker: {
+          enabled: false,
+        },
+      },
     },
+
+    title: { text: PACKAGE + " NPM and jsDelivr downloads" },
+
     xAxis: {
       type: "datetime",
       plotLines: plotlines,
     },
-    yAxis: [{ title: { text: "NPM", style: { color: "blue" } } }, { title: { text: "jsDelivr", style: { color: "red" } }, opposite: true }],
+    yAxis: [
+      { title: { text: "NPM", style: { color: "blue" } } },
+      { title: { text: "jsDelivr", style: { color: "red" } }, opposite: true },
+      //{ title: { text: "Total", style: { color: "black" } }, opposite: true }
+    ],
     series: [
       {
         name: "NPM avg",
-        data: toHighcharts(computeMovingAverage(npm)),
+        data: computeMovingAverage(npm),
         yAxis: 0,
         color: "blue",
         zIndex: 4,
+        shadow: true,
       },
       {
         name: "jsDelivr avg",
-        data: toHighcharts(computeMovingAverage(jsdelivr)),
+        data: computeMovingAverage(jsdelivr),
         yAxis: 1,
         color: "red",
         zIndex: 3,
+        shadow: true,
       },
       {
+        type: "area",
         name: "NPM accurate",
-        data: toHighcharts(npm),
+        data: npm,
         yAxis: 0,
         color: "blue",
         opacity: 0.1,
         zIndex: 2,
         states: { hover: { opacity: 1 } },
+        legendSymbolColor: "#0000FF50",
       },
       {
+        type: "area",
         name: "jsDelivr accurate",
-        data: toHighcharts(jsdelivr),
+        data: jsdelivr,
         yAxis: 1,
         color: "red",
         opacity: 0.1,
         zIndex: 1,
         states: { hover: { opacity: 1 } },
+        legendSymbolColor: "#FF000050",
       },
+      // {
+      //   name: "Total average",
+      //   data: computeMovingAverage(total),
+      //   yAxis: 2,
+      //   color: "black",
+      //   zIndex: 5,
+      // },
     ],
+    tooltip: {
+      useHTML: true,
+      //fixed: true,
+      formatter() {
+        const dateFormatter = new Intl.DateTimeFormat("en-US", {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        });
+        let output = `<div style="text-align: center; font-weight: bold;">${dateFormatter.format(new Date(this.category))}</div>`;
+        output += '<div class="tooltip">';
+        for (const s of this?.series?.chart?.series) {
+          const opacity = s !== this.series ? 0.2 : 1;
+          output += `
+            <div>
+              <span>
+                <span style="color:${s.color}; opacity: ${opacity}; margin-right: 4px;">\u25CF</span>
+                <span>${s.name}</span>
+              </span>
+              <span>${s.dataTable.columns.y[this.index]}</span>
+            </div>
+          `;
+        }
+        output += "</div>";
+        return output;
+      },
+    },
   });
-
-  console.log(chart.getOptions());
 
   lastUpdated.textContent = `Last updated: ${new Date().toLocaleString()}`;
   button.disabled = false;
@@ -250,6 +308,7 @@ document.getElementById("confirm-range").addEventListener("click", () => {
 // Initialize default range and input limits
 (async () => {
   const versions = await getNpmPublishDates();
+  const packages = await getNpmPackages();
   const minDate = Object.values(versions).sort()[0];
   const today = new Date();
   const todayIso = isoDate(today);
@@ -271,5 +330,5 @@ document.getElementById("confirm-range").addEventListener("click", () => {
   fromInput.value = defaultFrom;
   toInput.value = defaultTo;
 
-  renderChart(defaultFrom, defaultTo);
+  renderChart(defaultFrom, defaultTo, versions);
 })();
