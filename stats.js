@@ -143,13 +143,25 @@ const fetchSplitStats = async (fromDate, toDate) => {
   for (const r of jsdelivrRanges) {
     try {
       const downloads = await fetchJsDelivrDownloads(r);
-      const filtered = r === "month" ? downloads.filter((d) => new Date(d.date) >= monthStart) : downloads;
-      filtered.forEach(({ date, downloads }) => {
-        if (!seenJsDelivr.has(date)) {
-          seenJsDelivr.add(date);
-          jsdelivr.push([date, Math.round(downloads / 2)]);
-        }
-      });
+      const filtered =
+        r === "month" ? downloads.filter((d) => new Date(d.date) >= monthStart) : downloads;
+
+      if (r !== "month" && filtered.every((d) => d.downloads === 0)) {
+        const monthData = await fetchJsDelivrDownloads("month");
+        monthData
+          .filter((d) => d.date >= fromDate && d.date <= toDate && !seenJsDelivr.has(d.date))
+          .forEach(({ date, downloads }) => {
+            seenJsDelivr.add(date);
+            jsdelivr.push([date, Math.round(downloads / 2)]);
+          });
+      } else {
+        filtered.forEach(({ date, downloads }) => {
+          if (!seenJsDelivr.has(date)) {
+            seenJsDelivr.add(date);
+            jsdelivr.push([date, Math.round(downloads / 2)]);
+          }
+        });
+      }
     } catch (e) {
       console.warn(`Skipping jsDelivr ${r}: ${e.message}`);
     }
@@ -294,41 +306,50 @@ const renderChart = async (fromDate, toDate, vers) => {
   button.disabled = false;
 };
 
-document.getElementById("confirm-range").addEventListener("click", () => {
-  const from = document.getElementById("from-date").value;
-  const to = document.getElementById("to-date").value;
+if (typeof document !== "undefined") {
+  document.getElementById("confirm-range").addEventListener("click", () => {
+    const from = document.getElementById("from-date").value;
+    const to = document.getElementById("to-date").value;
 
-  if (from && to && from <= to) {
-    renderChart(from, to);
-  } else {
-    alert("Please select a valid date range.");
-  }
-});
+    if (from && to && from <= to) {
+      renderChart(from, to);
+    } else {
+      alert("Please select a valid date range.");
+    }
+  });
 
-// Initialize default range and input limits
-(async () => {
-  const versions = await getNpmPublishDates();
-  const packages = await getNpmPackages();
-  const minDate = Object.values(versions).sort()[0];
-  const today = new Date();
-  const todayIso = isoDate(today);
+  // Initialize default range and input limits
+  (async () => {
+    const versions = await getNpmPublishDates();
+    const packages = await getNpmPackages();
+    const minDate = Object.values(versions).sort()[0];
+    const today = new Date();
+    const todayIso = isoDate(today);
 
-  const fromInput = document.getElementById("from-date");
-  const toInput = document.getElementById("to-date");
-  fromInput.min = minDate;
-  toInput.min = minDate;
-  fromInput.max = todayIso;
-  toInput.max = todayIso;
+    const fromInput = document.getElementById("from-date");
+    const toInput = document.getElementById("to-date");
+    fromInput.min = minDate;
+    toInput.min = minDate;
+    fromInput.max = todayIso;
+    toInput.max = todayIso;
 
-  const thisMonth = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1));
-  const fromDate = new Date(thisMonth);
-  fromDate.setUTCMonth(fromDate.getUTCMonth() - 5);
-  if (fromDate < new Date(minDate)) fromDate.setTime(new Date(minDate).getTime());
-  const defaultFrom = isoDate(fromDate);
-  const defaultTo = todayIso;
+    const thisMonth = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1));
+    const fromDate = new Date(thisMonth);
+    fromDate.setUTCMonth(fromDate.getUTCMonth() - 5);
+    if (fromDate < new Date(minDate)) fromDate.setTime(new Date(minDate).getTime());
+    const defaultFrom = isoDate(fromDate);
+    const defaultTo = todayIso;
 
-  fromInput.value = defaultFrom;
-  toInput.value = defaultTo;
+    fromInput.value = defaultFrom;
+    toInput.value = defaultTo;
 
-  renderChart(defaultFrom, defaultTo, versions);
-})();
+    renderChart(defaultFrom, defaultTo, versions);
+  })();
+}
+
+if (typeof module !== "undefined") {
+  module.exports = {
+    fetchJsDelivrDownloads,
+    fetchSplitStats,
+  };
+}
